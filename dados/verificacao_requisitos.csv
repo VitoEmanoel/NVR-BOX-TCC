@@ -1,0 +1,19 @@
+hora,requisito,verificacao,esperado,obtido,ok
+2026-11-12 13:17:55,RF01,abrir o painel pelo navegador (GET /),200 e titulo do painel,"200, titulo presente",sim
+2026-11-12 13:17:55,RF02,indicadores de armazenamento na pagina inicial,uso do HD exibido,presente,sim
+2026-11-12 13:17:55,RF08,cadastrar camera em porta sem RTSP (8555),cadastro recusado com mensagem,"HTTP 400, cameras cadastradas: 0",sim
+2026-11-12 13:17:58,RF05,cadastrar camera simulada (RTSP na porta 8554),302 e camera salva,"HTTP 302, slug camera_teste",sim
+2026-11-12 13:17:58,RF08,teste de conexao RTSP aceito no cadastro valido,cadastro aceito apos teste,HTTP 302,sim
+2026-11-12 13:18:10,RF02,consultar estado da camera (API de status),online e gravando,"online=True, gravacao=gravando",sim
+2026-11-12 13:18:14,RF03,abrir o ao vivo (/live),fluxo MJPEG com um quadro JPEG completo,"HTTP 200, multipart/x-mixed-replace, primeiro quadro completo recebido em 4.05 s",sim
+2026-11-12 13:18:29,RF09,gravacao continua: arquivo crescendo,tamanho aumenta em 15 s,6815772 -> 15990812 bytes,sim
+2026-11-12 13:23:04,RF10,segmentacao (segmento configurado em 300 s),segundo arquivo criado,2 segmentos,sim
+2026-11-12 13:23:04,RF12,listar gravacoes filtrando pela data e calendario,lista do dia e contagem no calendario,2 videos em 2026-11-12; calendario 2,sim
+2026-11-12 13:23:04,RF13,entrega parcial do video ao player (/video com Range),"206, video/mp4, 1024 bytes","HTTP 206, video/mp4, 1024 bytes",sim
+2026-11-12 13:23:04,RF14,inicio da conversao para formato compativel (/video_compativel),fluxo WebM,"HTTP 200, video/webm, cabecalho WebM sim, 65536 bytes em 0.19 s",sim
+2026-11-12 13:23:05,RF15,baixar o arquivo (/download),"200, anexo, mesmo tamanho e duracao reconhecida pelo ffprobe","HTTP 200, attachment; filename=camera_te, 173662703/173662703 bytes, duracao 303.423813 s",sim
+2026-11-12 13:23:05,RF06,editar o nome da camera,302 e nome alterado,"HTTP 302, nomes ['Camera Teste Editada']",sim
+2026-11-12 13:23:05,RF11,tentar apagar o segmento que esta sendo gravado,exclusao recusada,"HTTP 302, arquivo mantido",sim
+2026-11-12 13:24:09,RF11,apagar uma gravacao fechada pelo painel,302 e arquivo removido,"HTTP 302, arquivo removido",sim
+2026-11-12 13:24:09,RF16,escolher local de armazenamento,disco ausente recusado e pasta valida aceita,"disco ausente HTTP 400, pasta valida HTTP 302",sim
+2026-11-12 13:24:09,RF07,remover a camera,302 e cadastro vazio,"HTTP 302, cameras restantes 0",sim

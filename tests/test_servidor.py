@@ -1,0 +1,404 @@
+import os
+import tempfile
+import time
+import unittest
+from unittest import mock
+
+from nvrbox import servidor
+
+
+class ServidorCalendarioTest(unittest.TestCase):
+    def criar_arquivo(self, pasta, nome):
+        caminho = os.path.join(pasta, nome)
+        with open(caminho, "wb") as arquivo:
+            arquivo.write(b"teste")
+        return caminho
+
+    def test_lista_dias_gravacoes_por_camera(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            self.criar_arquivo(pasta, "garagem_2026-07-21_10-00-00.mp4")
+            self.criar_arquivo(pasta, "garagem_2026-07-21_10-10-00.mp4")
+            self.criar_arquivo(pasta, "garagem_2026-07-22_08-00-00.mp4")
+            self.criar_arquivo(pasta, "garagem_fundos_2026-07-22_08-00-00.mp4")
+            self.criar_arquivo(pasta, "garagem_2026-07-22_08-00-00.txt")
+            self.criar_arquivo(pasta, "garagem_sem_data.mp4")
+
+            dias = servidor.listar_dias_gravacoes_camera(pasta, "garagem")
+
+        self.assertEqual(
+            dias,
+            [
+                {"data": "2026-07-22", "total": 1},
+                {"data": "2026-07-21", "total": 2},
+            ],
+        )
+
+    def test_api_calendario_retorna_dias_da_camera(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            self.criar_arquivo(pasta, "entrada_2026-07-22_08-00-00.mp4")
+            self.criar_arquivo(pasta, "entrada_2026-07-22_08-10-00.mp4")
+            self.criar_arquivo(pasta, "sala_2026-07-22_08-00-00.mp4")
+
+            cameras = [
+                {
+                    "nome": "Entrada",
+                    "slug": "entrada",
+                    "rtsp_url": "rtsp://admin:senha@192.168.0.10:554/onvif1",
+                }
+            ]
+
+            with (
+                mock.patch.object(servidor, "carregar_cameras", return_value=cameras),
+                mock.patch.object(servidor, "get_caminho_videos", return_value=pasta),
+            ):
+                resposta = servidor.app.test_client().get("/api/camera/entrada/calendario")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(
+            resposta.get_json(),
+            {"dias": [{"data": "2026-07-22", "total": 2}]},
+        )
+
+    def test_tela_detalhe_inclui_calendario(self):
+        cameras = [
+            {
+                "nome": "Entrada",
+                "slug": "entrada",
+                "rtsp_url": "rtsp://admin:senha@192.168.0.10:554/onvif1",
+            }
+        ]
+
+        with mock.patch.object(servidor, "carregar_cameras", return_value=cameras):
+            resposta = servidor.app.test_client().get("/camera/entrada")
+
+        html = resposta.get_data(as_text=True)
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn('id="recording-calendar-grid"', html)
+        self.assertIn('/api/camera/entrada/calendario', html)
+
+
+class ListaGravacoesTest(unittest.TestCase):
+    def criar(self, pasta, nome, tamanho, inicio_segundos_atras=None, modificado_atras=0):
+        caminho = os.path.join(pasta, nome)
+        with open(caminho, "wb") as arquivo:
+            arquivo.write(b"x" * tamanho)
+        modificado = time.time() - modificado_atras
+        os.utime(caminho, (modificado, modificado))
+        return caminho
+
+    def nome_em(self, slug, epoch):
+        return f"{slug}_{time.strftime('%Y-%m-%d_%H-%M-%S', time.localtime(epoch))}.mp4"
+
+    def test_duracao_vem_do_nome_e_da_modificacao_sem_ffprobe(self):
+        agora = time.time()
+        with tempfile.TemporaryDirectory() as pasta:
+            nome = self.nome_em("garagem", agora - 3600)
+            self.criar(pasta, nome, 200 * 1024, modificado_atras=3600 - 900)
+            with mock.patch.object(servidor.subprocess, "run", side_effect=AssertionError("nao deve chamar ffprobe")):
+                info = servidor.obter_info_video(pasta, nome, "garagem", agora=agora)
+
+        self.assertEqual(info["duracao"], "15:00")
+        self.assertTrue(info["reproduzivel"])
+        self.assertFalse(info["em_gravacao"])
+
+    def test_segmento_atual_aparece_como_gravando(self):
+        agora = time.time()
+        with tempfile.TemporaryDirectory() as pasta:
+            nome = self.nome_em("garagem", agora - 20)
+            self.criar(pasta, nome, 1024)
+            info = servidor.obter_info_video(pasta, nome, "garagem", agora=agora)
+        self.assertTrue(info["em_gravacao"])
+        self.assertTrue(info["reproduzivel"])
+
+    def test_so_o_segmento_mais_novo_aparece_gravando(self):
+        agora = time.time()
+        with tempfile.TemporaryDirectory() as pasta:
+            anterior = self.nome_em("garagem", agora - 930)
+            atual = self.nome_em("garagem", agora - 30)
+            if anterior[:18] != atual[:18]:
+                self.skipTest("os dois segmentos cairam em dias diferentes (perto da meia-noite)")
+            self.criar(pasta, anterior, 200 * 1024, modificado_atras=30)
+            self.criar(pasta, atual, 200 * 1024)
+            _data, videos = servidor.listar_videos_camera(pasta, "garagem")
+        self.assertEqual([(v["nome"], v["em_gravacao"]) for v in videos], [(atual, True), (anterior, False)])
+
+    def test_arquivo_minusculo_antigo_e_invalido(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            self.criar(pasta, "garagem_2026-09-01_10-00-00.mp4", 1024, modificado_atras=3600)
+            info = servidor.obter_info_video(pasta, "garagem_2026-09-01_10-00-00.mp4", "garagem")
+        self.assertFalse(info["reproduzivel"])
+
+    def test_sem_data_abre_o_dia_mais_recente(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            for nome in (
+                "garagem_2026-09-22_10-00-00.mp4",
+                "garagem_2026-09-23_09-00-00.mp4",
+                "garagem_2026-09-23_09-15-00.mp4",
+                "garagem_fundos_2026-09-24_10-00-00.mp4",
+            ):
+                self.criar(pasta, nome, 100 * 1024, modificado_atras=3600)
+
+            data, videos = servidor.listar_videos_camera(pasta, "garagem")
+            self.assertEqual(data, "2026-09-23")
+            self.assertEqual([v["nome"] for v in videos], [
+                "garagem_2026-09-23_09-15-00.mp4",
+                "garagem_2026-09-23_09-00-00.mp4",
+            ])
+
+            data, videos = servidor.listar_videos_camera(pasta, "garagem", "2026-09-22")
+            self.assertEqual((data, len(videos)), ("2026-09-22", 1))
+
+    def test_api_informa_o_dia_usado(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            self.criar(pasta, "entrada_2026-09-23_09-00-00.mp4", 100 * 1024, modificado_atras=3600)
+            cameras = [{"nome": "Entrada", "slug": "entrada", "rtsp_url": "rtsp://a:b@192.168.0.10:554/onvif1"}]
+            with (
+                mock.patch.object(servidor, "carregar_cameras", return_value=cameras),
+                mock.patch.object(servidor, "get_caminho_videos", return_value=pasta),
+            ):
+                dados = servidor.app.test_client().get("/api/camera/entrada/videos").get_json()
+        self.assertEqual(dados["data"], "2026-09-23")
+        self.assertEqual(dados["total_videos"], 1)
+
+
+class StatusGravacaoTest(unittest.TestCase):
+    AGORA = 1_000_000
+
+    def estado(self, **camera):
+        return {
+            "ativo": True,
+            "atualizado_em": self.AGORA - 30,
+            "cameras": {"garagem": {"estado": "gravando", "reinicios": 0, **camera}},
+        }
+
+    def test_sem_estado_indica_captura_parada(self):
+        resumo = servidor.resumo_gravacao("garagem", None, agora=self.AGORA)
+        self.assertEqual(resumo["codigo"], "captura_parada")
+
+    def test_estado_desatualizado_indica_captura_parada(self):
+        estado = self.estado()
+        estado["atualizado_em"] = self.AGORA - servidor.ESTADO_CAPTURA_VALIDADE - 1
+        self.assertEqual(servidor.resumo_gravacao("garagem", estado, agora=self.AGORA)["codigo"], "captura_parada")
+
+    def test_captura_encerrada_indica_captura_parada(self):
+        estado = {"ativo": False, "atualizado_em": self.AGORA, "cameras": {}}
+        self.assertEqual(servidor.resumo_gravacao("garagem", estado, agora=self.AGORA)["codigo"], "captura_parada")
+
+    def test_gravando(self):
+        resumo = servidor.resumo_gravacao("garagem", self.estado(), agora=self.AGORA)
+        self.assertEqual(resumo, {"codigo": "gravando", "texto": "Gravando", "detalhe": ""})
+
+    def test_parada_mostra_tempo_e_ultimo_erro(self):
+        estado = self.estado(
+            estado="iniciando",
+            ultima_gravacao=self.AGORA - 3 * 24 * 3600 - 2 * 3600,
+            reinicios=4,
+            ultimo_erro="Connection timed out",
+        )
+        resumo = servidor.resumo_gravacao("garagem", estado, agora=self.AGORA)
+        self.assertEqual(resumo["codigo"], "parada")
+        self.assertEqual(resumo["texto"], "Sem gravar ha 3 dias 2 h")
+        self.assertEqual(resumo["detalhe"], "Connection timed out")
+
+    def test_reconexao_recente_aparece_como_conectando(self):
+        estado = self.estado(estado="iniciando", ultima_gravacao=self.AGORA - 20)
+        self.assertEqual(servidor.resumo_gravacao("garagem", estado, agora=self.AGORA)["codigo"], "iniciando")
+
+    def test_formatar_tempo_decorrido(self):
+        self.assertEqual(servidor.formatar_tempo_decorrido(30), "menos de 1 min")
+        self.assertEqual(servidor.formatar_tempo_decorrido(5 * 60), "5 min")
+        self.assertEqual(servidor.formatar_tempo_decorrido(2 * 3600), "2 h")
+        self.assertEqual(servidor.formatar_tempo_decorrido(3600 + 60 * 7), "1 h 7 min")
+        self.assertEqual(servidor.formatar_tempo_decorrido(26 * 3600), "1 dia 2 h")
+
+    def cameras(self):
+        return [{"nome": "Garagem", "slug": "garagem", "rtsp_url": "rtsp://admin:senha@127.0.0.1:9/onvif1"}]
+
+    def get(self, url, estado):
+        with tempfile.TemporaryDirectory() as pasta:
+            with (
+                mock.patch.object(servidor, "carregar_cameras", return_value=self.cameras()),
+                mock.patch.object(servidor, "carregar_estado_captura", return_value=estado),
+                mock.patch.object(servidor, "get_caminho_videos", return_value=pasta),
+                mock.patch.object(servidor, "listar_armazenamentos", return_value=[]),
+                mock.patch.object(servidor, "verificar_online", return_value=True),
+            ):
+                return servidor.app.test_client().get(url)
+
+    def test_painel_avisa_quando_captura_parada(self):
+        html = self.get("/", None).get_data(as_text=True)
+        self.assertIn("Nenhuma câmera está gravando.", html)
+        self.assertIn("rec-captura_parada", html)
+
+    def test_painel_mostra_camera_gravando(self):
+        estado = self.estado()
+        estado["atualizado_em"] = time.time()
+        html = self.get("/", estado).get_data(as_text=True)
+        self.assertNotIn("Nenhuma câmera está gravando.", html)
+        self.assertIn("rec-gravando", html)
+
+    def test_painel_avisa_hd_desconectado_sem_quebrar(self):
+        erro = servidor.ArmazenamentoIndisponivel("O HD externo nao esta conectado (/mnt/hd/gravacoes).")
+        with mock.patch.object(servidor, "garantir_diretorios", side_effect=erro):
+            resposta = self.get("/", None)
+        html = resposta.get_data(as_text=True)
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Não é possível gravar.", html)
+        self.assertIn("O HD externo nao esta conectado", html)
+
+    def test_erro_geral_da_captura_aparece_na_camera(self):
+        estado = self.estado(estado="reconectando", ultima_gravacao=self.AGORA - 600)
+        estado["erro"] = "O HD externo nao esta conectado (/mnt/hd/gravacoes). Conecte o HD para voltar a gravar."
+        resumo = servidor.resumo_gravacao("garagem", estado, agora=self.AGORA)
+        self.assertEqual(resumo["codigo"], "parada")
+        self.assertEqual(resumo["texto"], "Sem gravar ha 10 min")
+        self.assertIn("Conecte o HD", resumo["detalhe"])
+
+    def test_camera_nao_encontrada_na_rede(self):
+        estado = self.estado(estado="nao_encontrada")
+        resumo = servidor.resumo_gravacao("garagem", estado, agora=self.AGORA)
+        self.assertEqual(resumo["texto"], "Camera nao encontrada na rede")
+        self.assertIn("Verifique se ela esta ligada", resumo["detalhe"])
+
+    def test_gravando_mostra_aviso_de_troca_de_endereco(self):
+        estado = self.estado(aviso="Camera mudou de endereco (192.168.0.2 -> 192.168.0.3) e o sistema atualizou sozinho")
+        resumo = servidor.resumo_gravacao("garagem", estado, agora=self.AGORA)
+        self.assertEqual(resumo["codigo"], "gravando")
+        self.assertIn("o sistema atualizou sozinho", resumo["detalhe"])
+
+    def test_api_status_inclui_gravacao(self):
+        dados = self.get("/api/camera/garagem/status", None).get_json()
+        self.assertTrue(dados["online"])
+        self.assertEqual(dados["gravacao"]["codigo"], "captura_parada")
+
+
+class MacNoCadastroTest(unittest.TestCase):
+    def camera_atual(self):
+        return {
+            "nome": "Lateral casa",
+            "slug": "lateral_casa",
+            "ip": "192.168.0.2",
+            "mac": "02:0a:bc:de:00:01",
+            "usuario": "admin",
+            "porta": 554,
+            "perfil": "onvif1",
+            "protocolo": "udp",
+            "rtsp_url": "rtsp://admin:senha@192.168.0.2:554/onvif1",
+        }
+
+    def form(self, **campos):
+        dados = {"nome": "Lateral casa", "ip": "192.168.0.2", "usuario": "admin", "porta": "554",
+                 "perfil": "onvif1", "protocolo": "udp", "mac": "02:0a:bc:de:00:01"}
+        dados.update(campos)
+        return dados
+
+    def validar(self, dados, mac_na_rede):
+        atual = self.camera_atual()
+        with (
+            mock.patch.object(servidor, "TESTAR_RTSP_CADASTRO", False),
+            mock.patch.object(servidor.rede, "mac_do_ip", return_value=mac_na_rede) as mac_do_ip,
+        ):
+            camera, erro = servidor.validar_edicao_camera(dados, [atual], "lateral_casa", atual)
+        self.assertIsNone(erro)
+        return camera, mac_do_ip
+
+    def test_mudar_ip_troca_o_mac_pelo_do_novo_aparelho(self):
+        camera, _ = self.validar(self.form(ip="192.168.0.3"), "02:0a:bc:de:00:02")
+        self.assertEqual(camera["ip"], "192.168.0.3")
+        self.assertEqual(camera["mac"], "02:0a:bc:de:00:02")
+
+    def test_mudar_ip_sem_achar_mac_deixa_vazio_para_aprender_depois(self):
+        camera, _ = self.validar(self.form(ip="192.168.0.3"), None)
+        self.assertEqual(camera["mac"], "")
+
+    def test_sem_mudar_ip_mantem_mac(self):
+        camera, mac_do_ip = self.validar(self.form(), "02:0a:bc:de:00:02")
+        self.assertEqual(camera["mac"], "02:0a:bc:de:00:01")
+        mac_do_ip.assert_not_called()
+
+    def test_cadastro_novo_preenche_mac_sozinho(self):
+        dados = {"nome": "Garagem", "ip": "192.168.0.4", "senha": "x", "perfil": "onvif1"}
+        with (
+            mock.patch.object(servidor, "TESTAR_RTSP_CADASTRO", False),
+            mock.patch.object(servidor.rede, "mac_do_ip", return_value="02:0a:bc:de:00:03"),
+        ):
+            camera, erro = servidor.validar_nova_camera(dados, [])
+        self.assertIsNone(erro)
+        self.assertEqual(camera["mac"], "02:0a:bc:de:00:03")
+
+
+class OrigemDoPedidoTest(unittest.TestCase):
+    def enviar(self, cabecalhos=None, base_url="http://localhost"):
+        with mock.patch.object(servidor, "definir_tempo_segmento", return_value=(True, None)) as definir:
+            resposta = servidor.app.test_client().post(
+                "/configurar_segmento",
+                data={"tempo_segmento": "900"},
+                headers=cabecalhos or {},
+                base_url=base_url,
+            )
+        return resposta, definir
+
+    def test_recusa_acao_enviada_por_outro_site(self):
+        resposta, definir = self.enviar({"Origin": "http://site-malicioso.example"})
+        self.assertEqual(resposta.status_code, 403)
+        definir.assert_not_called()
+
+    def test_recusa_origem_nula(self):
+        resposta, definir = self.enviar({"Origin": "null"})
+        self.assertEqual(resposta.status_code, 403)
+        definir.assert_not_called()
+
+    def test_recusa_referer_de_outro_site_sem_origin(self):
+        resposta, definir = self.enviar({"Referer": "http://site-malicioso.example/pagina"})
+        self.assertEqual(resposta.status_code, 403)
+        definir.assert_not_called()
+
+    def test_recusa_mesmo_host_em_outra_porta(self):
+        resposta, definir = self.enviar({"Origin": "http://localhost:8080"})
+        self.assertEqual(resposta.status_code, 403)
+        definir.assert_not_called()
+
+    def test_aceita_acao_vinda_do_proprio_painel(self):
+        resposta, definir = self.enviar({"Origin": "http://localhost"})
+        self.assertEqual(resposta.status_code, 302)
+        definir.assert_called_once_with("900")
+
+    def test_aceita_referer_do_proprio_painel(self):
+        resposta, definir = self.enviar({"Referer": "http://localhost/camera/garagem"})
+        self.assertEqual(resposta.status_code, 302)
+        definir.assert_called_once()
+
+    def test_aceita_painel_aberto_por_outro_endereco(self):
+        resposta, definir = self.enviar(
+            {"Origin": "http://nvrbox.exemplo:5000"}, base_url="http://nvrbox.exemplo:5000"
+        )
+        self.assertEqual(resposta.status_code, 302)
+        definir.assert_called_once()
+
+    def test_recusa_pedido_sem_origin_e_sem_referer(self):
+        resposta, definir = self.enviar()
+        self.assertEqual(resposta.status_code, 403)
+        definir.assert_not_called()
+
+    def test_recusa_mesmo_endereco_com_outro_esquema(self):
+        resposta, definir = self.enviar({"Origin": "https://localhost"})
+        self.assertEqual(resposta.status_code, 403)
+        definir.assert_not_called()
+
+    def test_origin_de_outro_site_prevalece_sobre_referer_do_painel(self):
+        resposta, definir = self.enviar(
+            {"Origin": "http://site-malicioso.example", "Referer": "http://localhost/"}
+        )
+        self.assertEqual(resposta.status_code, 403)
+        definir.assert_not_called()
+
+    def test_leitura_nao_e_bloqueada(self):
+        with mock.patch.object(servidor, "carregar_cameras", return_value=[]):
+            resposta = servidor.app.test_client().get(
+                "/api/camera/garagem/status", headers={"Origin": "http://site-malicioso.example"}
+            )
+        self.assertEqual(resposta.status_code, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()

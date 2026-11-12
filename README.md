@@ -1,0 +1,164 @@
+# NVR-BOX
+
+Codigo do NVR-BOX, sistema desenvolvido no Trabalho de Conclusao de Curso "Implementacao de um sistema de gravacao de video em rede de baixo custo utilizando cameras IP, hardware reaproveitado e software livre" (Victor Emanoel Lima Silva, Tecnologia em Sistemas de Computacao, UESPI, 2026, orientador Prof. Dr. Dario Brito Calcada). Os dados coletados para o artigo estao na pasta [`dados/`](dados/).
+
+NVRBox e um NVR residencial simples para uso local. Ele usa Flask para o painel web, FFmpeg para capturar cameras RTSP e arquivos `.mp4` segmentados e fragmentados para armazenar as gravacoes.
+
+O uso previsto e em `localhost`, rede local confiavel ou Tailscale. Por padrao, o painel continua sem login para manter o uso local simples; existe autenticacao opcional por variaveis de ambiente. O sistema nao deve ser exposto em IP publico, dominio publico ou porta aberta no roteador sem autenticacao e protecao de rede.
+
+Se precisar colocar o painel em uma rede onde outras pessoas tenham acesso, ative a autenticacao HTTP basica com variaveis de ambiente:
+
+```bash
+export NVRBOX_AUTH_USUARIO="admin"
+export NVRBOX_AUTH_SENHA="troque-esta-senha"
+```
+
+Sem essas duas variaveis, o painel continua sem login para manter o uso local simples.
+
+## Funcionalidades atuais
+
+- Painel web em Flask.
+- Cadastro simplificado de cameras por nome, IP, senha e perfil RTSP.
+- Perfis RTSP conhecidos para ONVIF/Intelbras, Hikvision, Dahua, XM/Yoosee e generico.
+- Modo avancado para usuario, porta, MAC, protocolo UDP/TCP e caminho RTSP manual.
+- Live view via MJPEG.
+- Gravacao por FFmpeg em segmentos `.mp4`.
+- Segmentos `.mp4` fragmentados para preservar reproducao mesmo em paradas antes dos 10 minutos.
+- Historico de gravacoes por camera.
+- Calendario interativo de gravacoes por camera, com contador por dia.
+- Filtro por data.
+- Reproducao de gravacoes no proprio painel.
+- Acoes explicitas de player e download na lista de gravacoes.
+- Rota de reproducao compativel com navegador usando FFmpeg/WebM quando o `.mp4` original nao toca diretamente.
+- Download de videos.
+- Remocao de cameras por `POST`.
+- Edicao de cameras pela tela de detalhe, mantendo o slug e as gravacoes antigas.
+- Mascaramento de senha RTSP na interface.
+- Escolha da memoria de gravacao pelo painel.
+- Limpeza automatica quando o disco passa do limite configurado.
+- Configuracao real de cameras em arquivo local ignorado pelo Git.
+- Slugs seguros para rotas, nomes de arquivos e logs.
+- Mensagens de erro e sucesso exibidas no painel.
+- Teste real de stream RTSP antes de salvar uma nova camera.
+- Autenticacao opcional por variaveis de ambiente.
+- Rotacao simples dos logs do FFmpeg.
+
+## Requisitos
+
+- Python 3.
+- FFmpeg instalado no sistema.
+- Flask.
+
+Instale as dependencias Python:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Execucao
+
+Para iniciar o sistema completo:
+
+```bash
+./iniciar_nvr.sh
+```
+
+Ou rode os processos separadamente:
+
+```bash
+python3 -m nvrbox.limpeza
+python3 -m nvrbox.captura
+python3 -m nvrbox.servidor
+```
+
+Depois acesse:
+
+```text
+http://127.0.0.1:5000
+```
+
+Em outro dispositivo da rede ou via Tailscale, use o IP da maquina onde o servidor esta rodando.
+
+## Armazenamento
+
+O usuario pode escolher a memoria de gravacao no painel principal. A escolha fica salva em `sistema.json`, que e um arquivo local da maquina e nao deve ser versionado.
+
+A ordem de resolucao do armazenamento e:
+
+1. Variavel de ambiente `NVRBOX_GRAVACOES`, se existir.
+2. Caminho salvo em `sistema.json`.
+3. Memorias gravaveis detectadas em caminhos comuns de Linux, TV Box e Android.
+4. Fallback local em `gravacoes/`.
+
+Ao trocar a memoria pelo painel, a captura reinicia os processos FFmpeg para gravar no novo caminho. As gravacoes antigas permanecem na memoria anterior.
+
+## Ao vivo e gravacoes
+
+O painel principal mostra as cameras cadastradas, o status online/offline e a quantidade de gravacoes por camera. Para ver o video ao vivo, abra a camera pelo botao `Abrir Camera`; o stream MJPEG e carregado na tela de detalhe.
+
+Na tela da camera, a lista `Gravacoes` mostra os arquivos encontrados no armazenamento ativo. O calendario destaca dias com gravacoes, mostra a quantidade de videos por dia e permite clicar em uma data para filtrar a lista. O filtro manual por data continua disponivel como fallback. Ao abrir uma gravacao, o painel interrompe o stream ao vivo, mostra o player de video e usa uma rota compativel com navegador (`/video_compativel/<arquivo>`) para converter o trecho sob demanda para WebM quando necessario. O download continua entregando o arquivo `.mp4` original.
+
+Arquivos com menos de 64 KB que nao estao sendo gravados aparecem como incompletos na lista.
+
+## Gravacoes curtas e queda de energia
+
+Cada segmento tem duracao alvo de 10 minutos por padrao. Se a energia cair, o processo for encerrado ou a camera parar antes disso, o trecho ja gravado deve continuar reproduzivel. Para isso, a captura usa MP4 fragmentado (`frag_keyframe`, `empty_moov` e `default_base_moof`), que escreve metadados no inicio e ao longo do arquivo em vez de depender apenas do fechamento final.
+
+Arquivos antigos gravados antes dessa configuracao podem continuar aparecendo como incompletos se perderam o indice final do MP4.
+
+## Configuracao de cameras
+
+O cadastro principal pede:
+
+- nome da camera;
+- IP da camera;
+- senha;
+- perfil/modelo RTSP.
+
+As opcoes avancadas permitem ajustar:
+
+- usuario, padrao `admin`;
+- porta RTSP, padrao `554`;
+- MAC;
+- protocolo UDP/TCP;
+- caminho RTSP manual.
+
+As cameras ficam salvas em `cameras.local.json`, que e um arquivo local da maquina e nao deve ser versionado. O repositorio mantem `cameras.example.json` apenas como modelo sem credenciais reais. Cameras ja cadastradas podem ser editadas pela tela de detalhe; se a senha ficar em branco, a senha atual e mantida.
+
+Ao editar IP, perfil, porta, usuario, senha ou protocolo, o slug da camera e preservado para manter o historico de gravacoes. A captura detecta a alteracao e reinicia o FFmpeg daquela camera no proximo ciclo do watchdog.
+
+Para criar uma configuracao inicial manualmente, copie o exemplo e ajuste os dados:
+
+```bash
+cp cameras.example.json cameras.local.json
+```
+
+Por padrao, o sistema testa o stream RTSP com `ffprobe` antes de salvar uma nova camera. Para ambientes onde a camera so fica acessivel depois de ajustes externos, esse teste pode ser desligado:
+
+```bash
+export NVRBOX_TESTAR_RTSP_CADASTRO=0
+```
+
+## Variaveis de ambiente uteis
+
+- `NVRBOX_AUTH_USUARIO` e `NVRBOX_AUTH_SENHA`: ativam autenticacao HTTP basica.
+- `NVRBOX_GRAVACOES`: forca o caminho de gravacao.
+- `NVRBOX_CAMERAS`: muda o arquivo JSON de cameras.
+- `NVRBOX_LIMITE_DISCO`: limite de uso do disco para limpeza automatica, padrao `90`.
+- `NVRBOX_TEMPO_SEGMENTO`: duracao de cada segmento em segundos, padrao `600`. Quando definida, tem prioridade sobre a escolha feita no painel.
+- `NVRBOX_RTSP_TRANSPORTE`: transporte padrao `udp` ou `tcp`, padrao `udp`.
+- `NVRBOX_TESTAR_RTSP_CADASTRO`: liga/desliga o teste RTSP no cadastro, padrao `1`.
+- `NVRBOX_TIMEOUT_TESTE_RTSP`: tempo maximo do teste RTSP em segundos, padrao `20`.
+- `NVRBOX_FFMPEG_LOG_MAX_BYTES`: tamanho maximo de cada log FFmpeg antes da rotacao, padrao `2097152`.
+
+## Verificacoes
+
+Antes de considerar uma alteracao concluida, rode:
+
+```bash
+python3 -m py_compile nvrbox/*.py
+python3 -m unittest
+python3 -m json.tool cameras.example.json
+test ! -f cameras.local.json || python3 -m json.tool cameras.local.json
+bash -n iniciar_nvr.sh
+```

@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ camera.nome }} | NVRBox</title>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/detalhe.css') }}">
+</head>
+<body>
+
+<div class="container">
+    <div class="header-nav">
+        <div>
+            <h1 class="camera-title">{{ camera.nome }}</h1>
+            <span class="camera-url">{{ camera.rtsp_mascarado }}</span>
+        </div>
+        <div class="header-actions">
+            <button type="button" class="btn-edit" id="btn-edit"><i class="ph ph-pencil-simple"></i> Editar</button>
+            <a href="/" class="btn-back"><i class="ph ph-arrow-left"></i> Voltar ao painel</a>
+        </div>
+    </div>
+
+    {% if mensagem_erro %}
+    <div class="alert alert-error">{{ mensagem_erro }}</div>
+    {% endif %}
+    {% if mensagem_sucesso %}
+    <div class="alert alert-success">{{ mensagem_sucesso }}</div>
+    {% endif %}
+
+    <section class="edit-panel" id="edit-panel" {% if not edicao_aberta %}hidden{% endif %}>
+        <h3><i class="ph ph-pencil-simple"></i> Editar câmera</h3>
+        <form action="{{ url_for('editar_camera', slug=camera.slug) }}" method="POST" class="edit-camera-form">
+            <div class="edit-form-grid">
+                <label>
+                    <span>Nome</span>
+                    <input type="text" name="nome" value="{{ form_data.get('nome', '') }}" required>
+                </label>
+                <label>
+                    <span>IP</span>
+                    <input type="text" name="ip" value="{{ form_data.get('ip', '') }}" required>
+                </label>
+                <label>
+                    <span>Senha</span>
+                    <input type="password" name="senha" placeholder="Nova senha ou deixe em branco">
+                </label>
+                <label>
+                    <span>Perfil RTSP</span>
+                    <select name="perfil" id="perfil-editar">
+                        {% for chave, perfil in perfis_rtsp.items() %}
+                        <option value="{{ chave }}" {% if form_data.get('perfil', 'onvif1') == chave %}selected{% endif %}>{{ perfil.nome }}</option>
+                        {% endfor %}
+                        <option value="manual" {% if form_data.get('perfil') == 'manual' %}selected{% endif %}>Manual</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Usuário</span>
+                    <input type="text" name="usuario" value="{{ form_data.get('usuario', 'admin') }}" required>
+                </label>
+                <label>
+                    <span>Porta RTSP</span>
+                    <input type="number" name="porta" value="{{ form_data.get('porta', '554') }}" min="1" max="65535" required>
+                </label>
+                <label>
+                    <span>MAC</span>
+                    <input type="text" name="mac" value="{{ form_data.get('mac', '') }}" placeholder="aa:bb:cc:dd:ee:ff">
+                </label>
+                <label>
+                    <span>Protocolo</span>
+                    <select name="protocolo">
+                        <option value="udp" {% if form_data.get('protocolo', 'udp') == 'udp' %}selected{% endif %}>UDP</option>
+                        <option value="tcp" {% if form_data.get('protocolo') == 'tcp' %}selected{% endif %}>TCP</option>
+                    </select>
+                </label>
+                <label class="manual-path-edit">
+                    <span>Caminho RTSP manual</span>
+                    <input type="text" name="caminho_manual" id="caminho-manual-editar" value="{{ form_data.get('caminho_manual', '') }}" placeholder="/onvif1">
+                </label>
+            </div>
+            <div class="edit-form-actions">
+                <button type="submit" class="btn-save"><i class="ph ph-check"></i> Salvar alterações</button>
+                <button type="button" class="btn-cancel" id="btn-cancel-edit">Cancelar</button>
+            </div>
+        </form>
+    </section>
+
+    <div class="main-layout">
+        <div class="player-section" id="player-container">
+            <div class="display-container" id="video-wrapper">
+                <button class="fs-button" onclick="toggleFullScreen()"><i class="ph ph-corners-out"></i></button>
+                <img data-live-src="" class="video-player" id="live-feed" alt="Ao vivo" hidden>
+                <div class="video-player offline-live" id="live-feed-offline" hidden>
+                    <i class="ph ph-video-camera-slash"></i>
+                    <span>Câmera offline. As gravações salvas continuam disponíveis.</span>
+                </div>
+                <div class="video-player offline-live" id="live-feed-loading">
+                    <i class="ph ph-spinner-gap loading-spin"></i>
+                    <span>Carregando câmera...</span>
+                </div>
+                <video id="player" class="video-player video-player-recorded" controls playsinline preload="metadata"></video>
+            </div>
+            <div class="player-status" id="player-status"></div>
+            <button onclick="voltarAoVivo()" id="btn-live"><i class="ph ph-broadcast"></i> VOLTAR PARA O AO VIVO</button>
+        </div>
+
+        <div class="history-section">
+            <div class="history-header">
+                <h3>Gravações</h3>
+                <form
+                    action="{{ url_for('apagar_todos_videos', slug=camera.slug) }}"
+                    method="POST"
+                    class="delete-all-form"
+                    onsubmit="return confirm('Apagar todas as gravações desta câmera? Os vídeos recentes ou em gravação serão preservados.')"
+                >
+                    <button type="submit" class="btn-delete-all"><i class="ph ph-trash"></i> Apagar todas</button>
+                </form>
+                <div class="recording-calendar is-collapsed" id="recording-calendar" aria-label="Calendário de gravações">
+                    <div class="calendar-toolbar">
+                        <button type="button" class="calendar-nav" id="calendar-prev" title="Mês anterior">
+                            <i class="ph ph-caret-left"></i>
+                        </button>
+                        <strong id="calendar-month-label">--</strong>
+                        <button type="button" class="calendar-toggle" id="calendar-toggle" title="Abrir calendário">
+                            <i class="ph ph-calendar-dots"></i>
+                        </button>
+                        <button type="button" class="calendar-nav" id="calendar-next" title="Próximo mês">
+                            <i class="ph ph-caret-right"></i>
+                        </button>
+                    </div>
+                    <div class="calendar-grid" id="recording-calendar-grid" aria-live="polite"></div>
+                </div>
+                <form id="video-filter-form" hidden>
+                    <input type="hidden" name="data" value="{{ data_filtro }}">
+                </form>
+            </div>
+            <div class="video-list" id="video-list">
+                <div class="empty-message">
+                    <i class="ph ph-spinner-gap empty-icon loading-spin"></i>
+                    Carregando gravações...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-grid">
+        <div class="info-card">
+            <h5>ESTADO</h5>
+            <span class="status-text" id="camera-state">CARREGANDO...</span>
+        </div>
+        <div class="info-card">
+            <h5>GRAVAÇÃO</h5>
+            <span class="status-text" id="recording-state">CARREGANDO...</span>
+            <p class="info-note" id="recording-detail" hidden></p>
+        </div>
+        <div class="info-card">
+            <h5>GRAVAÇÕES DO DIA</h5>
+            <span class="video-total" id="video-total">--</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    const player = document.getElementById('player');
+    const liveFeed = document.getElementById('live-feed');
+    const liveFeedLoading = document.getElementById('live-feed-loading');
+    const liveFeedOffline = document.getElementById('live-feed-offline');
+    const btnLive = document.getElementById('btn-live');
+    const playerStatus = document.getElementById('player-status');
+    const btnEdit = document.getElementById('btn-edit');
+    const editPanel = document.getElementById('edit-panel');
+    const btnCancelEdit = document.getElementById('btn-cancel-edit');
+    const perfilEditar = document.getElementById('perfil-editar');
+    const caminhoManualEditar = document.getElementById('caminho-manual-editar');
+    const cameraState = document.getElementById('camera-state');
+    const recordingState = document.getElementById('recording-state');
+    const recordingDetail = document.getElementById('recording-detail');
+    const videoTotal = document.getElementById('video-total');
+    const videoList = document.getElementById('video-list');
+    const videoFilterForm = document.getElementById('video-filter-form');
+    const videoDateInput = videoFilterForm.querySelector('input[name="data"]');
+    const recordingCalendar = document.getElementById('recording-calendar');
+    const calendarGrid = document.getElementById('recording-calendar-grid');
+    const calendarMonthLabel = document.getElementById('calendar-month-label');
+    const calendarPrev = document.getElementById('calendar-prev');
+    const calendarNext = document.getElementById('calendar-next');
+    const calendarToggle = document.getElementById('calendar-toggle');
+    const videoOriginalUrl = "{{ url_for('serve_video', filename='__FILENAME__') }}";
+    const videoCompativelUrl = "{{ url_for('serve_video_compativel', filename='__FILENAME__') }}";
+    const downloadVideoUrl = "{{ url_for('download_video', filename='__FILENAME__') }}";
+    const apagarVideoUrl = "{{ url_for('apagar_video', slug=camera.slug, filename='__FILENAME__') }}";
+    const cameraStatusUrl = "{{ url_for('api_camera_status', slug=camera.slug) }}";
+    const cameraVideosUrl = "{{ url_for('api_camera_videos', slug=camera.slug) }}";
+    const cameraCalendarUrl = "{{ url_for('api_camera_calendario', slug=camera.slug) }}";
+    const nomesDiasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const nomesMeses = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    let videoAtual = null;
+    let diasComGravacao = new Map();
+    let mesCalendario = new Date();
+    mesCalendario = new Date(mesCalendario.getFullYear(), mesCalendario.getMonth(), 1);
+
+    function montarUrl(baseUrl, filename) {
+        return baseUrl.replace('__FILENAME__', encodeURIComponent(filename));
+    }
+
+    function atualizarStatus(texto, tipo = '') {
+        playerStatus.textContent = texto;
+        playerStatus.className = `player-status ${tipo}`;
+    }
+
+    function esconderAoVivo() {
+        liveFeed.style.display = 'none';
+        liveFeed.hidden = true;
+        liveFeedOffline.hidden = true;
+        liveFeedOffline.style.display = 'none';
+        liveFeedLoading.hidden = true;
+        liveFeedLoading.style.display = 'none';
+        liveFeed.removeAttribute('src');
+    }
+
+    function mostrarPlayerVideo() {
+        esconderAoVivo();
+        player.hidden = false;
+        player.style.display = 'block';
+        btnLive.style.display = 'flex';
+    }
+
+    function mostrarAoVivo() {
+        player.hidden = true;
+        player.style.display = 'none';
+        btnLive.style.display = 'none';
+        if (liveFeed.dataset.liveSrc) {
+            liveFeedLoading.hidden = true;
+            liveFeedLoading.style.display = 'none';
+            liveFeedOffline.hidden = true;
+            liveFeedOffline.style.display = 'none';
+            liveFeed.hidden = false;
+            liveFeed.style.display = 'block';
+            liveFeed.src = liveFeed.dataset.liveSrc;
+        } else if (!liveFeedOffline.hidden) {
+            liveFeed.style.display = 'none';
+            liveFeed.hidden = true;
+            liveFeedLoading.hidden = true;
+            liveFeedLoading.style.display = 'none';
+            liveFeedOffline.hidden = false;
+            liveFeedOffline.style.display = 'flex';
+        } else {
+            liveFeed.style.display = 'none';
+            liveFeed.hidden = true;
+            liveFeedLoading.hidden = false;
+            liveFeedLoading.style.display = 'flex';
+            liveFeedOffline.hidden = true;
+            liveFeedOffline.style.display = 'none';
+        }
+    }
+
+    function carregarVideo(src, origem) {
+        player.pause();
+        player.dataset.origem = origem;
+        player.src = src;
+        player.load();
+
+        const promessa = player.play();
+        if (promessa && typeof promessa.catch === 'function') {
+            promessa.catch(() => {
+                atualizarStatus('Gravação carregada. Use o botão play do player.', 'player-status-info');
+            });
+        }
+    }
+
+    function toggleFullScreen() {
+        const elem = document.getElementById('video-wrapper');
+        if (!document.fullscreenElement) {
+            elem.requestFullscreen().catch(err => {
+                alert(`Erro ao tentar entrar em tela cheia: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+    function reproduzirVideo(filename) {
+        videoAtual = {
+            nome: filename,
+            usandoFallback: false,
+        };
+        mostrarPlayerVideo();
+        atualizarStatus('Abrindo gravação original...', 'player-status-info');
+        carregarVideo(montarUrl(videoOriginalUrl, filename), 'original');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function voltarAoVivo() {
+        videoAtual = null;
+        player.pause();
+        delete player.dataset.origem;
+        player.removeAttribute('src');
+        player.load();
+        atualizarStatus('');
+        mostrarAoVivo();
+    }
+
+    player.addEventListener('loadedmetadata', () => {
+        if (player.dataset.origem === 'fallback') {
+            atualizarStatus('Gravação compatível pronta.', 'player-status-info');
+            return;
+        }
+        atualizarStatus('Gravação pronta.', 'player-status-info');
+    });
+
+    player.addEventListener('playing', () => {
+        atualizarStatus('');
+    });
+
+    player.addEventListener('error', () => {
+        if (!videoAtual) {
+            return;
+        }
+        if (player.error && player.error.code === 1) {
+            return;
+        }
+        if (!videoAtual.usandoFallback) {
+            videoAtual.usandoFallback = true;
+            atualizarStatus('MP4 original não tocou neste navegador. Preparando versão compatível...', 'player-status-info');
+            carregarVideo(montarUrl(videoCompativelUrl, videoAtual.nome), 'fallback');
+            return;
+        }
+        atualizarStatus('Não foi possível reproduzir esta gravação no navegador.', 'player-status-error');
+    });
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function criarMetaVideo(video) {
+        const partes = [];
+        if (video.em_gravacao) {
+            partes.push('Gravando agora');
+        }
+        if (video.duracao) {
+            partes.push(video.duracao);
+        }
+        partes.push(video.tamanho);
+        return partes.join(' · ');
+    }
+
+    function criarDataLocal(valor) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(valor || '')) {
+            return null;
+        }
+        const [ano, mes, dia] = valor.split('-').map(Number);
+        const data = new Date(ano, mes - 1, dia);
+        if (
+            data.getFullYear() !== ano ||
+            data.getMonth() !== mes - 1 ||
+            data.getDate() !== dia
+        ) {
+            return null;
+        }
+        return data;
+    }
+
+    function formatarDataIso(data) {
+        const ano = data.getFullYear();
+        const mes = String(data.getMonth() + 1).padStart(2, '0');
+        const dia = String(data.getDate()).padStart(2, '0');
+        return `${ano}-${mes}-${dia}`;
+    }
+
+    function sincronizarMesComFiltro() {
+        const dataFiltro = criarDataLocal(videoDateInput.value);
+        if (dataFiltro) {
+            mesCalendario = new Date(dataFiltro.getFullYear(), dataFiltro.getMonth(), 1);
+        }
+    }
+
+    function atualizarEstadoCalendario() {
+        const recolhido = recordingCalendar.classList.contains('is-collapsed');
+        calendarToggle.title = recolhido ? 'Abrir calendário' : 'Recolher calendário';
+        calendarToggle.setAttribute('aria-expanded', String(!recolhido));
+    }
+
+    function abrirCalendario() {
+        recordingCalendar.classList.remove('is-collapsed');
+        atualizarEstadoCalendario();
+    }
+
+    function recolherCalendario() {
+        recordingCalendar.classList.add('is-collapsed');
+        atualizarEstadoCalendario();
+    }
+
+    function renderizarCalendario() {
+        const ano = mesCalendario.getFullYear();
+        const mes = mesCalendario.getMonth();
+        const hojeIso = formatarDataIso(new Date());
+        const selecionado = videoDateInput.value;
+        const primeiroDia = new Date(ano, mes, 1).getDay();
+        const totalDias = new Date(ano, mes + 1, 0).getDate();
+        let html = nomesDiasSemana.map((dia) => `<span class="calendar-weekday">${dia}</span>`).join('');
+
+        calendarMonthLabel.textContent = `${nomesMeses[mes]} ${ano}`;
+
+        for (let vazio = 0; vazio < primeiroDia; vazio += 1) {
+            html += '<span class="calendar-empty"></span>';
+        }
+
+        for (let dia = 1; dia <= totalDias; dia += 1) {
+            const data = new Date(ano, mes, dia);
+            const dataIso = formatarDataIso(data);
+            const total = diasComGravacao.get(dataIso) || 0;
+            const classes = [
+                'calendar-day',
+                total ? 'calendar-day-recorded' : 'calendar-day-empty',
+                dataIso === selecionado ? 'calendar-day-selected' : '',
+                dataIso === hojeIso ? 'calendar-day-today' : '',
+            ].filter(Boolean).join(' ');
+            const titulo = total
+                ? `${total} gravação${total > 1 ? 'ões' : ''} em ${dataIso}`
+                : `Sem gravações em ${dataIso}`;
+
+            html += `
+                <button type="button" class="${classes}" data-date="${dataIso}" title="${titulo}">
+                    <span class="calendar-day-number">${dia}</span>
+                    <span class="calendar-day-count">${total || ''}</span>
+                </button>
+            `;
+        }
+
+        calendarGrid.innerHTML = html;
+    }
+
+    async function carregarCalendario() {
+        try {
+            const resposta = await fetch(cameraCalendarUrl, { cache: 'no-store' });
+            if (!resposta.ok) {
+                throw new Error('Falha ao carregar calendário');
+            }
+
+            const dados = await resposta.json();
+            const dias = dados.dias || [];
+            diasComGravacao = new Map(dias.map((dia) => [dia.data, Number(dia.total) || 0]));
+            sincronizarMesComFiltro();
+            if (!videoDateInput.value && dias.length) {
+                const dataMaisRecente = criarDataLocal(dias[0].data);
+                if (dataMaisRecente) {
+                    mesCalendario = new Date(dataMaisRecente.getFullYear(), dataMaisRecente.getMonth(), 1);
+                }
+            }
+            renderizarCalendario();
+        } catch (_erro) {
+            calendarMonthLabel.textContent = 'Calendário';
+            calendarGrid.innerHTML = '<div class="calendar-error">Não foi possível carregar o calendário.</div>';
+        }
+    }
+
+    function renderizarVideos(videos) {
+        if (!videos.length) {
+            videoList.innerHTML = `
+                <div class="empty-message">
+                    <i class="ph ph-ghost empty-icon"></i>
+                    Nenhuma gravação encontrada para esta data.
+                </div>
+            `;
+            return;
+        }
+
+        videoList.innerHTML = videos.map((video) => {
+            const nome = escapeHtml(video.nome);
+            const meta = escapeHtml(criarMetaVideo(video));
+            const downloadUrl = montarUrl(downloadVideoUrl, video.nome);
+            const apagarUrl = escapeHtml(montarUrl(apagarVideoUrl, video.nome));
+            if (!video.reproduzivel) {
+                return `
+                    <div class="video-item video-item-disabled">
+                        <div class="video-click-area">
+                            <span class="recording-action recording-action-warning"><i class="ph ph-warning"></i><span>Inválido</span></span>
+                            <span class="v-name">${nome}</span>
+                            <span class="v-meta">Arquivo incompleto ou inválido · ${escapeHtml(video.tamanho)}</span>
+                        </div>
+                        <form action="${apagarUrl}" method="POST" class="delete-video-form" onsubmit="return confirm('Apagar esta gravação?')">
+                            <button type="submit" class="delete-video-link" title="Apagar gravação">
+                                <i class="ph ph-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="video-item">
+                    <button type="button" class="video-click-area js-play-video" data-video-nome="${nome}">
+                        <span class="recording-action recording-action-play"><i class="ph ph-play-circle"></i><span>Player</span></span>
+                        <span class="v-name">${nome}</span>
+                        <span class="v-meta">${meta}</span>
+                    </button>
+                    <a href="${downloadUrl}" class="download-link" title="Baixar gravação">
+                        <i class="ph ph-download-simple"></i><span>Download</span>
+                    </a>
+                    <form action="${apagarUrl}" method="POST" class="delete-video-form" onsubmit="return confirm('Apagar esta gravação?')">
+                        <button type="submit" class="delete-video-link" title="Apagar gravação">
+                            <i class="ph ph-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            `;
+        }).join('');
+
+    }
+
+    function encontrarBotaoVideo(elemento) {
+        let atual = elemento;
+        while (atual && atual !== videoList) {
+            if (atual.classList && atual.classList.contains('js-play-video')) {
+                return atual;
+            }
+            atual = atual.parentNode;
+        }
+        return null;
+    }
+
+    videoList.addEventListener('click', (event) => {
+        const botao = encontrarBotaoVideo(event.target);
+        if (!botao) {
+            return;
+        }
+
+        const videoNome = botao.dataset.videoNome;
+        if (!videoNome) {
+            return;
+        }
+
+        reproduzirVideo(videoNome);
+    });
+
+    function mostrarGravacao(gravacao) {
+        if (!gravacao) {
+            return;
+        }
+        recordingState.textContent = gravacao.texto.toUpperCase();
+        recordingState.className = `status-text recording-${gravacao.codigo}`;
+        recordingDetail.textContent = gravacao.detalhe || '';
+        recordingDetail.hidden = !gravacao.detalhe;
+    }
+
+    async function carregarStatusCamera() {
+        try {
+            const resposta = await fetch(cameraStatusUrl, { cache: 'no-store' });
+            if (!resposta.ok) {
+                throw new Error('Falha ao carregar status');
+            }
+
+            const dados = await resposta.json();
+            mostrarGravacao(dados.gravacao);
+            if (dados.online) {
+                cameraState.textContent = 'ONLINE';
+                cameraState.className = 'status-text status-online';
+                liveFeed.dataset.liveSrc = dados.live_url || '';
+                mostrarAoVivo();
+            } else {
+                cameraState.textContent = 'OFFLINE';
+                cameraState.className = 'status-text status-offline';
+                liveFeed.dataset.liveSrc = '';
+                liveFeed.hidden = true;
+                liveFeed.style.display = 'none';
+                liveFeedLoading.hidden = true;
+                liveFeedLoading.style.display = 'none';
+                liveFeedOffline.hidden = false;
+                liveFeedOffline.style.display = 'flex';
+            }
+        } catch (_erro) {
+            recordingState.textContent = 'INDISPONÍVEL';
+            recordingState.className = 'status-text status-offline';
+            cameraState.textContent = 'INDISPONÍVEL';
+            cameraState.className = 'status-text status-offline';
+            liveFeed.dataset.liveSrc = '';
+            liveFeed.hidden = true;
+            liveFeed.style.display = 'none';
+            liveFeedLoading.hidden = true;
+            liveFeedLoading.style.display = 'none';
+            liveFeedOffline.hidden = false;
+            liveFeedOffline.style.display = 'flex';
+        }
+    }
+
+    async function carregarListaVideos() {
+        const formData = new FormData(videoFilterForm);
+        const params = new URLSearchParams();
+        const data = formData.get('data');
+        if (data) {
+            params.set('data', data);
+        }
+
+        videoList.innerHTML = `
+            <div class="empty-message">
+                <i class="ph ph-spinner-gap empty-icon loading-spin"></i>
+                Carregando gravações...
+            </div>
+        `;
+
+        try {
+            const resposta = await fetch(`${cameraVideosUrl}?${params.toString()}`, { cache: 'no-store' });
+            if (!resposta.ok) {
+                throw new Error('Falha ao carregar gravações');
+            }
+
+            const dados = await resposta.json();
+            if (!videoDateInput.value && dados.data) {
+                // Sem data escolhida, o servidor devolve o dia mais recente com gravacao.
+                videoDateInput.value = dados.data;
+                sincronizarMesComFiltro();
+                renderizarCalendario();
+            }
+            videoTotal.textContent = `${dados.videos_validos} / ${dados.total_videos}`;
+            renderizarVideos(dados.videos || []);
+        } catch (_erro) {
+            videoTotal.textContent = '--';
+            videoList.innerHTML = `
+                <div class="empty-message">
+                    <i class="ph ph-warning empty-icon"></i>
+                    Não foi possível carregar as gravações agora.
+                </div>
+            `;
+        }
+    }
+
+    function alternarEdicao() {
+        editPanel.hidden = !editPanel.hidden;
+        if (!editPanel.hidden) {
+            editPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    function alternarCaminhoManualEdicao() {
+        const labelManual = caminhoManualEditar.closest('label');
+        labelManual.style.display = perfilEditar.value === 'manual' ? 'block' : 'none';
+    }
+
+    btnEdit.addEventListener('click', alternarEdicao);
+    btnCancelEdit.addEventListener('click', () => {
+        editPanel.hidden = true;
+    });
+    perfilEditar.addEventListener('change', alternarCaminhoManualEdicao);
+    videoFilterForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        sincronizarMesComFiltro();
+        renderizarCalendario();
+        carregarListaVideos();
+    });
+    calendarGrid.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element)) {
+            return;
+        }
+        const dia = event.target.closest('.calendar-day');
+        if (!dia) {
+            return;
+        }
+        videoDateInput.value = dia.dataset.date;
+        sincronizarMesComFiltro();
+        renderizarCalendario();
+        recolherCalendario();
+        carregarListaVideos();
+    });
+    calendarPrev.addEventListener('click', () => {
+        abrirCalendario();
+        mesCalendario = new Date(mesCalendario.getFullYear(), mesCalendario.getMonth() - 1, 1);
+        renderizarCalendario();
+    });
+    calendarNext.addEventListener('click', () => {
+        abrirCalendario();
+        mesCalendario = new Date(mesCalendario.getFullYear(), mesCalendario.getMonth() + 1, 1);
+        renderizarCalendario();
+    });
+    calendarToggle.addEventListener('click', () => {
+        recordingCalendar.classList.toggle('is-collapsed');
+        atualizarEstadoCalendario();
+    });
+    atualizarEstadoCalendario();
+    alternarCaminhoManualEdicao();
+    carregarStatusCamera();
+    carregarCalendario();
+    carregarListaVideos();
+</script>
+
+</body>
+</html>

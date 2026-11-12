@@ -1,0 +1,501 @@
+:root {
+    --bg: #030712;
+    --card: #111827;
+    --border: #1f2937;
+    --text-main: #f3f4f6;
+    --text-dim: #9ca3af;
+    --accent: #f7aa49;
+    --success: #10b981;
+    --danger: #ef4444;
+    --blue-ui: #3b82f6;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    background-color: var(--bg);
+    color: var(--text-main);
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+}
+
+.page-header {
+    align-items: flex-start;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+}
+
+.page-header h1 {
+    font-size: 1.5rem;
+    margin: 0;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.page-header p {
+    color: var(--text-dim);
+    margin: 5px 0 0;
+    font-size: 0.9rem;
+}
+
+.btn-monitor {
+    align-items: center;
+    background: var(--blue-ui);
+    border-radius: 8px;
+    color: white;
+    display: flex;
+    font-size: 0.9rem;
+    font-weight: bold;
+    gap: 8px;
+    min-height: 42px;
+    padding: 10px 14px;
+    text-decoration: none;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: var(--card);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.stat-icon {
+    font-size: 24px;
+    padding: 10px;
+    border-radius: 10px;
+    background: #1e293b;
+    color: var(--blue-ui);
+}
+
+.stat-icon-success {
+    color: var(--success);
+}
+
+.stat-icon-danger {
+    color: var(--danger);
+}
+
+.stat-info h4 {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+
+.stat-info span {
+    font-size: 1.3rem;
+    font-weight: bold;
+}
+
+.disk-percent {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+}
+
+.storage-card {
+    min-width: 0;
+}
+
+.storage-info,
+.segment-info {
+    min-width: 0;
+}
+
+.storage-form,
+.segment-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    min-width: 0;
+}
+
+.storage-form select,
+.segment-form select {
+    min-width: 0;
+    flex: 1;
+    background: #0f172a;
+    border: 1px solid var(--border);
+    color: white;
+    padding: 8px;
+    border-radius: 8px;
+}
+
+.storage-form button,
+.segment-form button {
+    background: var(--blue-ui);
+    border: none;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.segment-card {
+    min-width: 0;
+}
+
+.segment-note {
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    margin-top: 4px;
+}
+
+.storage-path {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+
+.add-section {
+    background: var(--card);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 30px;
+}
+
+.add-section h3 {
+    margin-top: 0;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.alert {
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+}
+
+.alert-error {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    color: #fecaca;
+}
+
+.alert-success {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    color: #bbf7d0;
+}
+
+.add-cam-form {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: stretch;
+}
+
+.add-cam-form input,
+.add-cam-form select {
+    background: #0f172a;
+    border: 1px solid var(--border);
+    color: white;
+    padding: 12px;
+    border-radius: 8px;
+    flex: 1;
+    min-width: 150px;
+}
+
+.advanced-options {
+    width: 100%;
+    border-top: 1px solid var(--border);
+    margin-top: 10px;
+    padding-top: 12px;
+}
+
+.advanced-options summary {
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: bold;
+}
+
+.advanced-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.advanced-grid input,
+.advanced-grid select {
+    width: 100%;
+}
+
+.manual-path {
+    display: none;
+}
+
+.btn-add {
+    background: var(--blue-ui);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.btn-add:hover {
+    background: #2563eb;
+}
+
+.camera-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+}
+
+.cam-card {
+    background: var(--card);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    transition: 0.3s;
+}
+
+.cam-card:hover {
+    border-color: var(--blue-ui);
+    transform: translateY(-3px);
+}
+
+.thumb-box {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    position: relative;
+    overflow: hidden;
+}
+
+.thumb-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    text-transform: uppercase;
+}
+
+.badge-online {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.badge-offline {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+
+.live-placeholder,
+.offline-placeholder {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #000;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+}
+
+.live-placeholder {
+    background: radial-gradient(circle at center, #111827 0%, #000 70%);
+    color: var(--success);
+}
+
+.live-icon,
+.offline-icon {
+    font-size: 3rem;
+}
+
+.offline-icon {
+    color: #333;
+}
+
+.cam-info {
+    padding: 15px;
+}
+
+.cam-info h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.cam-meta {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin: 10px 0;
+    display: flex;
+    gap: 15px;
+}
+
+.alert-captura {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+}
+
+.alert-captura i {
+    font-size: 1.4rem;
+}
+
+.rec-status {
+    align-items: center;
+    border-radius: 6px;
+    display: flex;
+    font-size: 0.85rem;
+    font-weight: 600;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 6px 10px;
+}
+
+.rec-gravando {
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--success);
+}
+
+.rec-iniciando {
+    background: rgba(247, 170, 73, 0.12);
+    color: var(--accent);
+}
+
+.rec-parada,
+.rec-captura_parada {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--danger);
+}
+
+.cam-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.delete-form {
+    flex: 1;
+    margin: 0;
+    display: flex;
+}
+
+.btn-view {
+    flex: 2;
+    background: #1f2937;
+    color: white;
+    text-decoration: none;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.btn-view:hover {
+    background: var(--blue-ui);
+}
+
+.btn-del {
+    width: 100%;
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 10px;
+    border-radius: 8px;
+    text-decoration: none;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+.btn-del:hover {
+    background: var(--danger);
+    color: white;
+}
+
+@media (max-width: 900px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .add-cam-form {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .add-cam-form input,
+    .add-cam-form select,
+    .btn-add {
+        width: 100%;
+        flex: none;
+    }
+}
+
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 1.2rem;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cam-actions {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .btn-view,
+    .btn-del {
+        width: 100%;
+        padding: 12px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+}
